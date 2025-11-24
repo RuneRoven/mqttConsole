@@ -1,0 +1,8 @@
+{
+  "server": "tcp://192.168.3.22",
+  "port": "1883",
+  "clientId": "mqtt_terminal",
+  "username": "",
+  "password": "",
+  "topics": ["#"]
+}
