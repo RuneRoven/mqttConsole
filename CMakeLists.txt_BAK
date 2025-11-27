@@ -18,13 +18,16 @@ endif()
 # --- Paho MQTT C++ ---
 include(FetchContent)
 # Try to find Paho MQTT C++ system-wide
-if(STATIC_LINKING)
-    message(STATUS "Forcing Paho MQTT C++ static build from source...")
+find_package(PahoMqttCpp QUIET)
+if(NOT PahoMqttCpp_FOUND)
+    message(STATUS "Paho MQTT C++ not found. Fetching and building from source...")
+    # Fetch and build Paho MQTT C++ (which includes the C library)
     FetchContent_Declare(
         paho_mqtt_cpp
         GIT_REPOSITORY https://github.com/eclipse/paho.mqtt.cpp.git
-        GIT_TAG v1.5.3
+        GIT_TAG v1.5.4
     )
+    # Initialize and update submodules (required for Paho MQTT C)
     FetchContent_GetProperties(paho_mqtt_cpp)
     if(NOT paho_mqtt_cpp_POPULATED)
         FetchContent_Populate(paho_mqtt_cpp)
@@ -37,59 +40,22 @@ if(STATIC_LINKING)
             WORKING_DIRECTORY ${paho_mqtt_cpp_SOURCE_DIR}
         )
     endif()
-
-    # Build Paho MQTT C++ and C statically
+    # Build Paho MQTT C++ and C
     set(PAHO_WITH_MQTT_C ON CACHE BOOL "Build Paho C library with C++ library")
     set(PAHO_BUILD_EXAMPLES OFF CACHE BOOL "Do not build Paho examples")
-    set(PAHO_BUILD_STATIC ON CACHE BOOL "Build static libraries")
-    set(PAHO_BUILD_SHARED OFF CACHE BOOL "Do not build shared libraries")
-    set(PAHO_BUILD_DOCUMENTATION OFF CACHE BOOL "Do not build documentation")
-
+    if(STATIC_LINKING)
+        set(PAHO_BUILD_STATIC ON CACHE BOOL "Build static libraries")
+    endif()
     add_subdirectory(${paho_mqtt_cpp_SOURCE_DIR} ${paho_mqtt_cpp_BINARY_DIR})
-
     # Set variables for Paho MQTT C++
     set(PAHO_MQTT_CPP_LIBRARIES paho-mqttpp3)
     set(PAHO_MQTT_CPP_INCLUDE_DIRS ${paho_mqtt_cpp_SOURCE_DIR}/src)
 else()
-    find_package(PahoMqttCpp QUIET)
-    if(NOT PahoMqttCpp_FOUND)
-        message(STATUS "Paho MQTT C++ not found. Fetching and building from source...")
-        # Fetch and build Paho MQTT C++ (which includes the C library)
-        FetchContent_Declare(
-            paho_mqtt_cpp
-            GIT_REPOSITORY https://github.com/eclipse/paho.mqtt.cpp.git
-            GIT_TAG v1.5.3
-        )
-        # Initialize and update submodules (required for Paho MQTT C)
-        FetchContent_GetProperties(paho_mqtt_cpp)
-        if(NOT paho_mqtt_cpp_POPULATED)
-            FetchContent_Populate(paho_mqtt_cpp)
-            execute_process(
-                COMMAND git submodule init
-                WORKING_DIRECTORY ${paho_mqtt_cpp_SOURCE_DIR}
-            )
-            execute_process(
-                COMMAND git submodule update
-                WORKING_DIRECTORY ${paho_mqtt_cpp_SOURCE_DIR}
-            )
-        endif()
-        # Build Paho MQTT C++ and C
-        set(PAHO_WITH_MQTT_C ON CACHE BOOL "Build Paho C library with C++ library")
-        set(PAHO_BUILD_EXAMPLES OFF CACHE BOOL "Do not build Paho examples")
-        if(STATIC_LINKING)
-            set(PAHO_BUILD_STATIC ON CACHE BOOL "Build static libraries")
-        endif()
-        add_subdirectory(${paho_mqtt_cpp_SOURCE_DIR} ${paho_mqtt_cpp_BINARY_DIR})
-        # Set variables for Paho MQTT C++
-        set(PAHO_MQTT_CPP_LIBRARIES paho-mqttpp3)
-        set(PAHO_MQTT_CPP_INCLUDE_DIRS ${paho_mqtt_cpp_SOURCE_DIR}/src)
-    else()
-        message(STATUS "Paho MQTT C++ found: ${PahoMqttCpp_LIBRARIES}")
-    endif()
+    message(STATUS "Paho MQTT C++ found: ${PahoMqttCpp_LIBRARIES}")
 endif()
 
 # --- ncurses ---
-find_package(Curses REQUIRED)
+find_package(Curses QUIET)
 if(NOT CURSES_FOUND)
     message(WARNING "ncurses library not found. Attempting to install...")
     execute_process(COMMAND bash -c "sudo apt update && sudo apt install -y libncurses5-dev libncursesw5-dev libncurses++-dev" RESULT_VARIABLE NCURSES_RESULT)
@@ -98,12 +64,7 @@ if(NOT CURSES_FOUND)
     endif()
     find_package(Curses REQUIRED)
 endif()
-if(STATIC_LINKING)
-    # For static linking, explicitly link against static ncurses libraries
-    set(CURSES_LIBRARIES ncurses tinfo)
-endif()
-# --- Threads ---
-find_package(Threads REQUIRED)
+
 # --- Your executable ---
 add_executable(mqtt_console
     src/main.cpp
@@ -146,9 +107,11 @@ endif()
 if(STATIC_LINKING)
     target_link_libraries(mqtt_console
         PRIVATE
-        paho-mqttpp3-static  # Use the static target name
-        paho-mqtt3a-static   # Use the static target name for the C library
+        ${PAHO_MQTT_CPP_LIBRARIES}
         ${CURSES_LIBRARIES}
+        paho-mqttpp3
+        paho-mqtt3a
+        paho-mqtt3as
         ssl
         crypto
         Threads::Threads
@@ -167,7 +130,6 @@ else()
         Threads::Threads
     )
 endif()
-
 
 # Copy example/default config into the build directory
 if(EXISTS "${CMAKE_SOURCE_DIR}/client_config.json")
